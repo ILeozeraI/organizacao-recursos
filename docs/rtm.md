@@ -1,6 +1,6 @@
 # RTM — Matriz de rastreabilidade (requisito → risco → teste → evidência)
 
-**Commit avaliado:** tag `v1.0.0-rc1` · **Evidência de execução:** CI {RUN_RC1} (todos os testes abaixo
+**Commit avaliado:** tag `v1.0.0-rc1` · **Evidência de execução:** [execução do CI da tag `v1.0.0-rc1`](https://github.com/ILeozeraI/organizacao-recursos/actions?query=branch%3Av1.0.0-rc1) (todos os testes abaixo
 rodam no `./mvnw -B verify` desse run). Caminhos de teste relativos a `src/test/java/br/senac/recursos/`.
 
 ## Requisitos críticos (100% com teste localizável, execução no CI e mutação morta)
