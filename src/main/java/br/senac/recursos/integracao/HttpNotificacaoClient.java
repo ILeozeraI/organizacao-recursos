@@ -1,5 +1,6 @@
 package br.senac.recursos.integracao;
 
+import java.io.IOException;
 import java.time.Duration;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatusCode;
@@ -55,10 +56,24 @@ public class HttpNotificacaoClient implements NotificacaoClient {
             throw new IntegracaoException(IntegracaoException.Tipo.INDISPONIVEL,
                     "Provedor de notificação não respondeu dentro do tempo limite.");
         } catch (RestClientException e) {
+            if (causadoPorIo(e)) {
+                // DEF-001: timeout durante a leitura do corpo chega embrulhado em RestClientException.
+                throw new IntegracaoException(IntegracaoException.Tipo.INDISPONIVEL,
+                        "Provedor de notificação não respondeu dentro do tempo limite.");
+            }
             throw new IntegracaoException(IntegracaoException.Tipo.RESPOSTA_INVALIDA,
                     "Resposta do provedor de notificação em formato inválido.");
         }
         return validar(resposta);
+    }
+
+    private static boolean causadoPorIo(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof IOException) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Status 200 não garante dado válido: valida o contrato antes de usar. */
