@@ -1,6 +1,7 @@
 package br.senac.recursos.integracao;
 
-import java.io.IOException;
+import java.net.SocketException;
+import java.net.SocketTimeoutException;
 import java.time.Duration;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatusCode;
@@ -69,7 +70,8 @@ public class HttpNotificacaoClient implements NotificacaoClient {
 
     private static boolean causadoPorIo(Throwable e) {
         for (Throwable t = e; t != null; t = t.getCause()) {
-            if (t instanceof IOException) {
+            // Só erros de rede/tempo. Erro de parse do JSON também é IOException (Jackson), mas é contrato quebrado.
+            if (t instanceof SocketTimeoutException || t instanceof SocketException) {
                 return true;
             }
         }
