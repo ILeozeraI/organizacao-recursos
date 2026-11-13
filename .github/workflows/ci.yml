@@ -89,6 +89,22 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+  wrapper-windows:
+    name: wrapper-windows
+    # Garante que o README funciona também no Windows (mvnw.cmd), onde o professor/aluno pode rodar.
+    if: github.event_name != 'pull_request' || contains(github.head_ref, 'release')
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: mvnw.cmd baixa o Maven e compila
+        shell: cmd
+        run: mvnw.cmd -B -q -DskipTests compile && echo WRAPPER_WINDOWS_OK
+
   carga:
     name: carga
     # Teste de carga (JMeter) contra a aplicação subindo DENTRO do runner (ambiente isolado,
