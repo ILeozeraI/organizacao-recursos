@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Organização de Recursos</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header class="topo">
+    <div class="marca">
+      <span class="logo" aria-hidden="true">▦</span>
+      <div>
+        <h1>Organização de Recursos</h1>
+        <p class="sub">Salas, professores e materiais sem conflito de horário</p>
+      </div>
+    </div>
+    <div id="sessao" class="sessao" hidden>
+      <span id="quem"></span>
+      <button id="sair" class="botao secundario">Sair</button>
+    </div>
+  </header>
+
+  <main>
+    <div id="aviso" class="aviso" role="status" aria-live="polite" hidden></div>
+
+    <section id="tela-login" class="cartao estreito">
+      <h2>Entrar</h2>
+      <form id="form-login">
+        <label>E-mail <input type="email" name="email" required autocomplete="username" value="ana@exemplo.invalid"></label>
+        <label>Senha <input type="password" name="senha" required autocomplete="current-password" value="senha123"></label>
+        <button class="botao" type="submit">Entrar</button>
+      </form>
+      <details class="dica">
+        <summary>Usuários de demonstração (dados fictícios)</summary>
+        <ul>
+          <li><b>Solicitante:</b> ana@exemplo.invalid</li>
+          <li><b>Solicitante:</b> bruno@exemplo.invalid</li>
+          <li><b>Responsável:</b> rita@exemplo.invalid</li>
+          <li><b>Administrador:</b> admin@exemplo.invalid</li>
+          <li>Senha de todos: <code>senha123</code></li>
+        </ul>
+      </details>
+    </section>
+
+    <section id="tela-app" hidden>
+      <div class="grade">
+        <section class="cartao">
+          <h2>Recursos</h2>
+          <form id="form-busca" class="filtros">
+            <label>Tipo
+              <select name="tipo">
+                <option value="">Todos</option>
+                <option value="SALA">Sala</option>
+                <option value="MATERIAL">Material</option>
+                <option value="PROFESSOR">Professor</option>
+              </select>
+            </label>
+            <label>Capacidade mínima <input type="number" name="capacidadeMinima" min="0"></label>
+            <label>Disponível de <input type="datetime-local" name="disponivelInicio"></label>
+            <label>até <input type="datetime-local" name="disponivelFim"></label>
+            <button class="botao secundario" type="submit">Buscar</button>
+          </form>
+          <ul id="lista-recursos" class="lista"></ul>
+        </section>
+
+        <section class="cartao" id="bloco-nova">
+          <h2>Nova reserva</h2>
+          <form id="form-reserva">
+            <label>Recurso (sala ou material) <select name="recursoId" required></select></label>
+            <label>Professor (opcional) <select name="professorId"><option value="">Nenhum</option></select></label>
+            <label>Início <input type="datetime-local" name="inicio" required></label>
+            <label>Término <input type="datetime-local" name="fim" required></label>
+            <label>Finalidade <input type="text" name="finalidade" maxlength="255" placeholder="Ex.: Aula de Qualidade de Software"></label>
+            <button class="botao" type="submit">Reservar</button>
+          </form>
+        </section>
+      </div>
+
+      <section class="cartao">
+        <h2 id="titulo-reservas">Reservas</h2>
+        <div class="tabela-rolagem">
+          <table>
+            <thead><tr><th>#</th><th>Recurso</th><th>Início</th><th>Término</th><th>Status</th><th>Ações</th></tr></thead>
+            <tbody id="lista-reservas"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="cartao" id="bloco-relatorio" hidden>
+        <h2>Relatório de utilização</h2>
+        <form id="form-relatorio" class="filtros">
+          <label>De <input type="date" name="inicio" required></label>
+          <label>Até (exclusive) <input type="date" name="fim" required></label>
+          <button class="botao secundario" type="submit">Gerar</button>
+        </form>
+        <div id="relatorio"></div>
+      </section>
+    </section>
+  </main>
+
+  <footer class="rodape">
+    <a href="/swagger-ui.html">Documentação da API</a> · Qualidade de Software 2026.2 · Senac
+  </footer>
+  <script src="app.js"></script>
+</body>
+</html>

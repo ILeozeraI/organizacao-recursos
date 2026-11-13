@@ -44,8 +44,7 @@ public class RelatorioService {
         var porProfessor = CalculadoraUtilizacao.horasPorProfessor(noPeriodo, periodo).entrySet().stream()
                 .map(e -> new RelatorioUtilizacao.LinhaProfessor(e.getKey(), nome.apply(e.getKey()), e.getValue()))
                 .toList();
-        long totalConflitos = conflitos
-                .findByRegistradoEmGreaterThanEqualAndRegistradoEmLessThan(periodo.inicio(), periodo.fim()).size();
+        long totalConflitos = conflitos.contarNoPeriodo(periodo.inicio(), periodo.fim());
         return new RelatorioUtilizacao(periodo.inicio(), periodo.fim(), porRecurso, porProfessor, totalConflitos);
     }
 }
