@@ -66,10 +66,7 @@ public class ReservaService {
     public Reserva criar(UsuarioAutenticado usuario, Long recursoId, Long professorId,
                          Intervalo intervalo, String finalidade, Integer participantes) {
         Recurso recurso = recursoReservavel(recursoId);
-        if (participantes != null && recurso.getCapacidade() != null && participantes > recurso.getCapacidade()) {
-            throw ErroNegocio.invalido("CAPACIDADE_EXCEDIDA",
-                    "O número de participantes excede a capacidade do recurso.");
-        }
+        recurso.validarLotacao(participantes);
         validarProfessor(professorId);
         verificarDisponibilidade(recurso.getId(), professorId, intervalo, 0L);
 
