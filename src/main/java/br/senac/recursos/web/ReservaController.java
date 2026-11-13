@@ -35,7 +35,7 @@ public class ReservaController {
     @ResponseStatus(HttpStatus.CREATED)
     public ReservaResponse criar(@AuthenticationPrincipal UsuarioAutenticado u, @Valid @RequestBody ReservaRequest req) {
         Reserva r = servico.criar(u, req.recursoId(), req.professorId(), new Intervalo(req.inicio(), req.fim()),
-                req.finalidade());
+                req.finalidade(), req.participantes());
         return ReservaResponse.de(r);
     }
 
