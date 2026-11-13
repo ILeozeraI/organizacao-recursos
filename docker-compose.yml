@@ -1,0 +1,15 @@
+# Banco PostgreSQL para rodar a aplicação localmente: docker compose up -d
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: recursos
+      POSTGRES_USER: recursos
+      POSTGRES_PASSWORD: recursos
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U recursos"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
