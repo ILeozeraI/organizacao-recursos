@@ -59,8 +59,15 @@ jobs:
 
       - name: Análise SonarCloud
         # Só roda quando o secret existe (forks e PRs externos não recebem secrets).
-        if: ${{ env.SONAR_TOKEN != '' }}
+        # Em tags não roda: a tag aponta para um commit da main, que já foi analisado.
+        if: ${{ env.SONAR_TOKEN != '' && github.ref_type != 'tag' }}
         run: ./mvnw -B -DskipTests org.sonarsource.scanner.maven:sonar-maven-plugin:sonar
+
+      - name: Quality Gate e issues do SonarCloud (resumo)
+        if: ${{ env.SONAR_TOKEN != '' && github.ref_type != 'tag' }}
+        run: |
+          ALVO=${{ github.event_name == 'pull_request' && format('pr:{0}', github.event.number) || 'main' }}
+          python3 scripts/sonar_resumo.py ILeozeraI_organizacao-recursos "$ALVO" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Publicar relatórios de teste
         if: always()
