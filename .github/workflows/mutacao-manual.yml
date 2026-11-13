@@ -1,0 +1,70 @@
+name: mutacao-manual
+
+# Aula 12 (Prompt 3): para cada regra crítica, QUEBRA a regra no código de produção,
+# roda a suíte e confere se algum teste FALHA. Mutante "morto" = os testes detectaram a quebra.
+# Mutante "vivo" = lacuna de teste. O código do repositório nunca é alterado (só a cópia do runner).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mutante:
+    name: ${{ matrix.id }} ${{ matrix.regra }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: M1
+            regra: Sobreposição (fronteira semiaberta)
+            quebra: "sed -i 's/return inicio.isBefore(outro.fim) \\&\\& outro.inicio.isBefore(fim);/return !inicio.isAfter(outro.fim) \\&\\& !outro.inicio.isAfter(fim);/' src/main/java/br/senac/recursos/dominio/Intervalo.java"
+          - id: M2
+            regra: Dupla reserva (constraint EXCLUDE no banco)
+            quebra: "python3 -c \"import re,io;p='src/main/resources/db/migration/V1__schema.sql';s=open(p).read();s=re.sub(r',\\s*-- RF6.*?WHERE \\(status IN \\(.SOLICITADA.,.APROVADA.,.EM_USO.\\)\\)', '', s, count=1, flags=re.S);open(p,'w').write(s)\""
+          - id: M3
+            regra: Aprovação obrigatória de recurso restrito
+            quebra: "sed -i 's/recurso.isRestrito() ? StatusReserva.SOLICITADA : StatusReserva.APROVADA/StatusReserva.APROVADA/' src/main/java/br/senac/recursos/servico/ReservaService.java"
+          - id: M4
+            regra: Bloqueio por manutenção
+            quebra: "sed -i 's/if (manutencoes.existeSobreposta(recursoId/if (false \\&\\& manutencoes.existeSobreposta(recursoId/' src/main/java/br/senac/recursos/servico/ReservaService.java"
+          - id: M5
+            regra: Autorização (só Solicitante cria reserva)
+            quebra: "sed -i '/HttpMethod.POST, \"\\/reservas\").hasRole(SOLICITANTE)/d' src/main/java/br/senac/recursos/seguranca/SecurityConfig.java"
+          - id: M6
+            regra: Auditoria de mudança de estado
+            quebra: "sed -i '/auditoria.registrar(r.getId(), usuario.id(), anterior, destino, motivo);/d' src/main/java/br/senac/recursos/servico/ReservaService.java"
+          - id: M7
+            regra: Posse (Solicitante só vê as próprias reservas)
+            quebra: "sed -i 's/if (usuario.eh(Perfil.SOLICITANTE) \\&\\& !r.pertenceA(usuario.id()))/if (false)/' src/main/java/br/senac/recursos/servico/ReservaService.java"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Aplicar a quebra
+        run: |
+          ${{ matrix.quebra }}
+          echo "Diff da quebra:"; git diff --stat; git diff | head -40
+          test -n "$(git diff)" || { echo "A quebra NÃO foi aplicada (padrão não encontrado)"; exit 1; }
+      - name: Rodar a suíte com a regra quebrada
+        id: suite
+        continue-on-error: true
+        run: ./mvnw -B verify -Djacoco.skip=true
+      - name: Resultado
+        run: |
+          {
+            echo "### ${{ matrix.id }} — ${{ matrix.regra }}"
+            if [ "${{ steps.suite.outcome }}" = "failure" ]; then
+              echo "**Mutante MORTO**: a suíte falhou com a regra quebrada. Testes que detectaram:"
+              grep -l -E "<failure|<error" target/surefire-reports/*.xml target/failsafe-reports/*.xml 2>/dev/null \
+                | xargs -r -n1 basename | sed 's/^TEST-//; s/\.xml$//; s/^/- /'
+            else
+              echo "**Mutante VIVO**: nenhum teste falhou. Lacuna de teste!"
+            fi
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          [ "${{ steps.suite.outcome }}" = "failure" ]
