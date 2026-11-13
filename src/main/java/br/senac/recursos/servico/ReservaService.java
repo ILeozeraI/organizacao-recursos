@@ -222,18 +222,46 @@ public class ReservaService {
 
     private <T> T comProtecaoDeConcorrencia(Long recursoId, Long professorId, Intervalo intervalo,
                                             Supplier<T> operacao) {
-        try {
-            return tx.execute(s -> operacao.get());
-        } catch (DataAccessException e) {
-            if (!violouExclusao(e)) {
-                throw e;
+        for (int tentativa = 1; ; tentativa++) {
+            try {
+                return tx.execute(s -> operacao.get());
+            } catch (DataAccessException e) {
+                if (falhaTransitoria(e) && tentativa < MAX_TENTATIVAS) {
+                    // DEF-002: vítima de deadlock/serialização é transitória: repete a operação.
+                    esperar(tentativa);
+                    continue;
+                }
+                if (!violouExclusao(e) && !falhaTransitoria(e)) {
+                    throw e;
+                }
+                // Camada 2: a constraint do banco barrou uma sobreposição que passou pela camada 1
+                // (duas requisições simultâneas). Resposta é 409, nunca 500.
+                conflitos.registrar(recursoId, professorId, intervalo);
+                throw ErroNegocio.conflito("CONFLITO_HORARIO",
+                        "Já existe uma reserva para este recurso ou professor neste horário.");
             }
-            // Camada 2: a constraint do banco barrou uma sobreposição que passou pela camada 1
-            // (duas requisições simultâneas). Resposta é 409, nunca 500.
-            conflitos.registrar(recursoId, professorId, intervalo);
-            throw ErroNegocio.conflito("CONFLITO_HORARIO",
-                    "Já existe uma reserva para este recurso ou professor neste horário.");
         }
+    }
+
+    private static final int MAX_TENTATIVAS = 3;
+
+    private static void esperar(int tentativa) {
+        try {
+            Thread.sleep(20L * tentativa);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /** SQLState 40P01 = deadlock_detected; 40001 = serialization_failure (ambos transitórios). */
+    static boolean falhaTransitoria(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof SQLException sql
+                    && ("40P01".equals(sql.getSQLState()) || "40001".equals(sql.getSQLState()))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** SQLState 23P01 = exclusion_violation do PostgreSQL (constraint EXCLUDE de sobreposição). */
