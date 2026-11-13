@@ -64,8 +64,12 @@ public class ReservaService {
     // ---------------------------------------------------------------- criação e alteração
 
     public Reserva criar(UsuarioAutenticado usuario, Long recursoId, Long professorId,
-                         Intervalo intervalo, String finalidade) {
+                         Intervalo intervalo, String finalidade, Integer participantes) {
         Recurso recurso = recursoReservavel(recursoId);
+        if (participantes != null && recurso.getCapacidade() != null && participantes > recurso.getCapacidade()) {
+            throw ErroNegocio.invalido("CAPACIDADE_EXCEDIDA",
+                    "O número de participantes excede a capacidade do recurso.");
+        }
         validarProfessor(professorId);
         verificarDisponibilidade(recurso.getId(), professorId, intervalo, 0L);
 
@@ -75,8 +79,10 @@ public class ReservaService {
                 : "Reserva criada e aprovada automaticamente (recurso não restrito)";
 
         return comProtecaoDeConcorrencia(recurso.getId(), professorId, intervalo, 0L, () -> {
-            Reserva r = reservas.saveAndFlush(new Reserva(recurso.getId(), professorId, usuario.id(), intervalo,
-                    finalidade, inicial, Instant.now(clock)));
+            Reserva nova = new Reserva(recurso.getId(), professorId, usuario.id(), intervalo,
+                    finalidade, inicial, Instant.now(clock));
+            nova.definirParticipantes(participantes);
+            Reserva r = reservas.saveAndFlush(nova);
             auditoria.registrar(r.getId(), usuario.id(), null, inicial, motivo);
             return r;
         });
