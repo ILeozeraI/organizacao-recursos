@@ -10,6 +10,7 @@ import br.senac.recursos.dominio.TipoRecurso;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 import java.time.Instant;
@@ -60,7 +61,8 @@ public final class Dtos {
             Long professorId,
             @NotNull(message = "informe o início") Instant inicio,
             @NotNull(message = "informe o término") Instant fim,
-            @Size(max = 255) String finalidade) {
+            @Size(max = 255) String finalidade,
+            @Positive(message = "o número de participantes deve ser maior que zero") Integer participantes) {
     }
 
     public record AlterarReservaRequest(
@@ -72,10 +74,10 @@ public final class Dtos {
     }
 
     public record ReservaResponse(Long id, Long recursoId, Long professorId, Long solicitanteId, Instant inicio,
-                                  Instant fim, StatusReserva status, String finalidade) {
+                                  Instant fim, StatusReserva status, String finalidade, Integer participantes) {
         static ReservaResponse de(Reserva r) {
             return new ReservaResponse(r.getId(), r.getRecursoId(), r.getProfessorId(), r.getSolicitanteId(),
-                    r.getInicio(), r.getFim(), r.getStatus(), r.getFinalidade());
+                    r.getInicio(), r.getFim(), r.getStatus(), r.getFinalidade(), r.getParticipantes());
         }
     }
 

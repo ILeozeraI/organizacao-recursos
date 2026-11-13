@@ -37,6 +37,15 @@ public class Recurso {
 
     public void desativar() { this.ativo = false; }
 
+    /** RN-09: participantes não podem exceder a capacidade (recurso sem capacidade não limita). */
+    public void validarLotacao(Integer participantes) {
+        if (participantes != null && capacidade != null && participantes > capacidade) {
+            throw ErroNegocio.invalido("CAPACIDADE_EXCEDIDA",
+                    "O número de participantes (" + participantes + ") excede a capacidade de " + nome
+                            + " (" + capacidade + ").");
+        }
+    }
+
     public Long getId() { return id; }
     public String getNome() { return nome; }
     public TipoRecurso getTipo() { return tipo; }

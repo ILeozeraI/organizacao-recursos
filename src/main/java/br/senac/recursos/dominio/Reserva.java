@@ -20,6 +20,7 @@ public class Reserva {
     @Enumerated(EnumType.STRING)
     private StatusReserva status;
     private String finalidade;
+    private Integer participantes;
     @Column(name = "criada_em")
     private Instant criadaEm;
     @Version
@@ -60,6 +61,10 @@ public class Reserva {
         return solicitanteId.equals(usuarioId);
     }
 
+    public void definirParticipantes(Integer participantes) {
+        this.participantes = participantes;
+    }
+
     public Intervalo intervalo() { return new Intervalo(inicio, fim); }
 
     public Long getId() { return id; }
@@ -70,5 +75,6 @@ public class Reserva {
     public Instant getFim() { return fim; }
     public StatusReserva getStatus() { return status; }
     public String getFinalidade() { return finalidade; }
+    public Integer getParticipantes() { return participantes; }
     public Instant getCriadaEm() { return criadaEm; }
 }
