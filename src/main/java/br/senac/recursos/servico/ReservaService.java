@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.function.Supplier;
 import java.sql.SQLException;
 import org.springframework.dao.DataAccessException;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,11 +44,12 @@ public class ReservaService {
     private final ConflitoService conflitos;
     private final TransactionTemplate tx;
     private final Clock clock;
+    private final JdbcTemplate jdbc;
 
     public ReservaService(ReservaRepository reservas, RecursoRepository recursos,
                           ManutencaoRepository manutencoes, MovimentacaoMaterialRepository movimentacoes,
                           AuditoriaService auditoria, ConflitoService conflitos,
-                          PlatformTransactionManager txManager, Clock clock) {
+                          PlatformTransactionManager txManager, Clock clock, JdbcTemplate jdbc) {
         this.reservas = reservas;
         this.recursos = recursos;
         this.manutencoes = manutencoes;
@@ -56,6 +58,7 @@ public class ReservaService {
         this.conflitos = conflitos;
         this.tx = new TransactionTemplate(txManager);
         this.clock = clock;
+        this.jdbc = jdbc;
     }
 
     // ---------------------------------------------------------------- criação e alteração
@@ -71,7 +74,7 @@ public class ReservaService {
                 ? "Reserva solicitada; recurso restrito aguarda aprovação de um Responsável"
                 : "Reserva criada e aprovada automaticamente (recurso não restrito)";
 
-        return comProtecaoDeConcorrencia(recurso.getId(), professorId, intervalo, () -> {
+        return comProtecaoDeConcorrencia(recurso.getId(), professorId, intervalo, 0L, () -> {
             Reserva r = reservas.saveAndFlush(new Reserva(recurso.getId(), professorId, usuario.id(), intervalo,
                     finalidade, inicial, Instant.now(clock)));
             auditoria.registrar(r.getId(), usuario.id(), null, inicial, motivo);
@@ -92,7 +95,7 @@ public class ReservaService {
         }
         verificarDisponibilidade(atual.getRecursoId(), atual.getProfessorId(), novo, atual.getId());
 
-        return comProtecaoDeConcorrencia(atual.getRecursoId(), atual.getProfessorId(), novo, () -> {
+        return comProtecaoDeConcorrencia(atual.getRecursoId(), atual.getProfessorId(), novo, reservaId, () -> {
             Reserva r = buscar(reservaId);
             r.reagendar(novo);
             auditoria.registrar(r.getId(), usuario.id(), r.getStatus(), r.getStatus(),
@@ -220,26 +223,67 @@ public class ReservaService {
         return reservas.saveAndFlush(r);
     }
 
+    /**
+     * Executa a gravação numa transação que, ANTES de tudo, pega travas consultivas do PostgreSQL
+     * (pg_advisory_xact_lock) do recurso e do professor, SEMPRE nessa ordem. Assim, pedidos
+     * concorrentes para o mesmo recurso/professor ficam em fila, sem deadlock (DEF-002), e a
+     * reverificação dentro da transação enxerga as reservas já confirmadas.
+     * A constraint EXCLUDE continua como última barreira (23P01 -> 409).
+     */
     private <T> T comProtecaoDeConcorrencia(Long recursoId, Long professorId, Intervalo intervalo,
-                                            Supplier<T> operacao) {
+                                            Long ignorarId, Supplier<T> operacao) {
         for (int tentativa = 1; ; tentativa++) {
             try {
-                return tx.execute(s -> operacao.get());
+                return tx.execute(s -> {
+                    travar(TRAVA_RECURSO, recursoId);
+                    if (professorId != null) {
+                        travar(TRAVA_PROFESSOR, professorId);
+                    }
+                    if (haSobreposicao(recursoId, professorId, intervalo, ignorarId)) {
+                        throw new ConflitoDetectado();
+                    }
+                    return operacao.get();
+                });
+            } catch (ConflitoDetectado e) {
+                return falharComConflito(recursoId, professorId, intervalo);
             } catch (DataAccessException e) {
                 if (falhaTransitoria(e) && tentativa < MAX_TENTATIVAS) {
-                    // DEF-002: vítima de deadlock/serialização é transitória: repete a operação.
                     esperar(tentativa);
                     continue;
                 }
                 if (!violouExclusao(e) && !falhaTransitoria(e)) {
                     throw e;
                 }
-                // Camada 2: a constraint do banco barrou uma sobreposição que passou pela camada 1
-                // (duas requisições simultâneas). Resposta é 409, nunca 500.
-                conflitos.registrar(recursoId, professorId, intervalo);
-                throw ErroNegocio.conflito("CONFLITO_HORARIO",
-                        "Já existe uma reserva para este recurso ou professor neste horário.");
+                return falharComConflito(recursoId, professorId, intervalo);
             }
+        }
+    }
+
+    private static final int TRAVA_RECURSO = 1;
+    private static final int TRAVA_PROFESSOR = 2;
+
+    private void travar(int tipo, Long id) {
+        jdbc.queryForList("select pg_advisory_xact_lock(?, ?)::text", tipo, id.intValue());
+    }
+
+    private boolean haSobreposicao(Long recursoId, Long professorId, Intervalo intervalo, Long ignorarId) {
+        return reservas.existeSobrepostaNoRecurso(recursoId, intervalo.inicio(), intervalo.fim(),
+                StatusReserva.ocupantes(), ignorarId)
+                || (professorId != null && reservas.existeSobrepostaNoProfessor(professorId, intervalo.inicio(),
+                intervalo.fim(), StatusReserva.ocupantes(), ignorarId));
+    }
+
+    private <T> T falharComConflito(Long recursoId, Long professorId, Intervalo intervalo) {
+        // Registro em transação própria, DEPOIS do rollback (não segura duas conexões ao mesmo tempo).
+        conflitos.registrar(recursoId, professorId, intervalo);
+        throw ErroNegocio.conflito("CONFLITO_HORARIO",
+                "Já existe uma reserva para este recurso ou professor neste horário.");
+    }
+
+    /** Sinaliza, de dentro da transação, que a reverificação encontrou conflito. */
+    private static final class ConflitoDetectado extends RuntimeException {
+        ConflitoDetectado() {
+            super(null, null, false, false);
         }
     }
 
