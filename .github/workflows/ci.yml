@@ -5,6 +5,7 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -18,6 +19,8 @@ jobs:
     name: test
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     steps:
       - name: Obter código
         uses: actions/checkout@v4
@@ -34,11 +37,29 @@ jobs:
       - name: Verificar (testes + gate de cobertura JaCoCo)
         run: ./mvnw -B verify
 
+      - name: Resumo da cobertura (JaCoCo)
+        if: always()
+        run: |
+          python3 - <<'PY' | tee -a "$GITHUB_STEP_SUMMARY"
+          import csv, os
+          if not os.path.exists('target/site/jacoco/jacoco.csv'):
+              print('Relatório JaCoCo não gerado.'); raise SystemExit
+          rows = list(csv.DictReader(open('target/site/jacoco/jacoco.csv')))
+          s = lambda k: sum(int(r[k]) for r in rows)
+          lc, lm, bc, bm = s('LINE_COVERED'), s('LINE_MISSED'), s('BRANCH_COVERED'), s('BRANCH_MISSED')
+          print('### Cobertura JaCoCo')
+          print(f'- Linhas: {lc}/{lc+lm} = {100*lc/(lc+lm):.1f}% (meta 80%)')
+          print(f'- Branches: {bc}/{bc+bm} = {100*bc/(bc+bm):.1f}% (meta 70%)')
+          print('')
+          print('| Classe | Linhas perdidas | Branches perdidos |')
+          print('|---|---|---|')
+          for r in sorted(rows, key=lambda r: -int(r['LINE_MISSED']))[:10]:
+              print(f"| {r['PACKAGE']}.{r['CLASS']} | {r['LINE_MISSED']} | {r['BRANCH_MISSED']} |")
+          PY
+
       - name: Análise SonarCloud
         # Só roda quando o secret existe (forks e PRs externos não recebem secrets).
         if: ${{ env.SONAR_TOKEN != '' }}
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: ./mvnw -B -DskipTests org.sonarsource.scanner.maven:sonar-maven-plugin:sonar
 
       - name: Publicar relatórios de teste
@@ -59,4 +80,67 @@ jobs:
           name: jacoco-${{ github.run_number }}
           path: target/site/jacoco/
           if-no-files-found: warn
+          retention-days: 30
+
+  carga:
+    name: carga
+    # Teste de carga (JMeter) contra a aplicação subindo DENTRO do runner (ambiente isolado,
+    # nunca contra ambiente compartilhado). Roda na main, nas tags e sob demanda.
+    if: github.event_name != 'pull_request'
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: recursos
+          POSTGRES_USER: recursos
+          POSTGRES_PASSWORD: recursos
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U recursos" --health-interval 5s --health-timeout 3s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Empacotar aplicação
+        run: ./mvnw -B -DskipTests package
+      - name: Subir aplicação
+        run: |
+          nohup java -jar target/organizacao-recursos-*.jar > app.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://localhost:8080/v3/api-docs > /dev/null && break; sleep 2; done
+          curl -sf http://localhost:8080/v3/api-docs > /dev/null
+      - name: Instalar JMeter 5.6.3
+        run: |
+          curl -fsSL -o jmeter.tgz https://archive.apache.org/dist/jmeter/binaries/apache-jmeter-5.6.3.tgz
+          tar xzf jmeter.tgz
+      - name: Rodada de carga (50 usuários, 60 s)
+        run: |
+          mkdir -p perf/resultados
+          apache-jmeter-5.6.3/bin/jmeter -n -t perf/reservas.jmx -l perf/resultados/rodada-01.jtl \
+            -Jjmeter.save.saveservice.output_format=csv -e -o perf/relatorio-01
+      - name: Métricas e verificação no banco
+        run: |
+          {
+            echo "### Teste de carga (commit ${GITHUB_SHA::7})"
+            python3 perf/analisar.py perf/resultados/rodada-01.jtl
+            echo ""
+            echo "Reservas ATIVAS no recurso 1 e intervalo disputado (deve ser 1):"
+            PGPASSWORD=recursos psql -h localhost -U recursos -d recursos -t -c \
+              "select count(*) from reserva where recurso_id = 1 and inicio = '2027-03-01T10:00:00Z' and status in ('SOLICITADA','APROVADA','EM_USO')"
+            echo "Erros 5xx no log da aplicação:"; grep -c "ERROR" app.log || true
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Publicar resultados
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: carga-${{ github.run_number }}
+          path: |
+            perf/resultados/
+            perf/relatorio-01/
+            app.log
           retention-days: 30
